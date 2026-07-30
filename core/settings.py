@@ -27,6 +27,9 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
+GUACD_HOST = "127.0.0.1"
+GUACD_PORT = 4822
+
 
 # Application definition
 

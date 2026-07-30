@@ -13,7 +13,8 @@ def _check_arg(elem: str) -> str:
     return elem_data
 
 
-def _encode_element(elem: str) -> str:
+def _encode_element(elem) -> str:
+    elem = str(elem)
     return f"{len(elem)}{ARG_SEP}{elem}"
 
 
@@ -27,8 +28,8 @@ class GuacamoleProtocol:
 
 
     @classmethod
-    def decode(cls, instruction: str):
-        if not instruction.endswith(INST_TERM):
+    def decode(cls, instruction: str, check_terminator=True):
+        if check_terminator and not instruction.endswith(INST_TERM):
             raise ValueError("Instruction termination not found")
         args = [_check_arg(arg) for arg in instruction.split(EL_SEP)]
         opcode = args[0]
@@ -42,10 +43,3 @@ class GuacamoleProtocol:
         elems = EL_SEP.join(parts) + INST_TERM
 
         return elems
-
-
-
-if __name__ == "__main__":
-    p = GuacamoleProtocol("connect", "127.0.0.1", "22")
-    print(p.encode())
-    print(p.decode("7.connect,9.127.0.0.1,2.22;"))

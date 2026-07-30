@@ -8,6 +8,8 @@ __pycache__/
 *.pyd
 db.sqlite3
 *.log
+0001_initial.py
+test.py
 
 # Środowisko / Tajne dane
 .env
