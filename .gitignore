@@ -8,17 +8,14 @@ __pycache__/
 *.pyd
 db.sqlite3
 *.log
-0001_initial.py
-test.py
 
 # Środowisko / Tajne dane
 .env
 .env.local
 
-# Frontend / Node (jeśli będziesz w projekcie używać npm/vite)
+# Frontend / Node
 node_modules/
-frontend/node_modules/
-.npm
+frontend/dist/
 
 # IDE / Edytory kodu
 .vscode/
@@ -29,3 +26,7 @@ frontend/node_modules/
 # Systemowe
 .DS_Store
 Thumbs.db
+
+# Agents
+.agents/
+

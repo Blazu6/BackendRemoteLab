@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pl">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Remote Lab - Połączenie</title>
+</head>
+
+<body>
+    <h2>Parametry Połączenia</h2>
+
+    <form id="connect-form">
+        <div class="field">
+            <label>Protokół:</label>
+            <select id="protocol">
+                <option value="ssh" selected>SSH</option>
+            </select>
+        </div>
+        <div class="field">
+            <label>Host IP:</label>
+            <input type="text" id="hostname" value="172.17.0.1">
+        </div>
+        <div class="field">
+            <label>Port:</label>
+            <input type="number" id="port" value="22">
+        </div>
+        <div class="field">
+            <label>Użytkownik:</label>
+            <input type="text" id="username" placeholder="np. blazu">
+        </div>
+        <div class="field">
+            <label>Hasło:</label>
+            <input type="password" id="password">
+        </div>
+        <button type="submit">Połącz</button>
+    </form>
+
+    <script>
+        let socket = null;
+
+        document.getElementById('connect-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            // Pobieramy wartości z formularza
+            const protocol = document.getElementById('protocol').value;
+            const hostname = document.getElementById('hostname').value;
+            const port = document.getElementById('port').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            // Budujemy URL z parametrami query
+            const query = `protocol=${protocol}&hostname=${hostname}&port=${port}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+            const wsUrl = `ws://${window.location.host}/ws/guacamole/?${query}`;
+
+            console.log("🚀 Otwieranie WebSocketu:", wsUrl);
+            socket = new WebSocket(wsUrl, 'guacamole');
+
+            socket.onopen = () => console.log("✅ WebSocket połączony!");
+            socket.onmessage = (e) => console.log("📥 Odbiór:", e.data);
+            socket.onerror = (err) => console.error("❌ Błąd:", err);
+            socket.onclose = () => console.log("🔌 Połączenie zamknięte");
+        });
+    </script>
+
+</body>

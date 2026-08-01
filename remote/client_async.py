@@ -45,6 +45,7 @@ class AsyncGuacamoleClient:
         while True:
             data = await self.reader.read(4096)
             if not data:
+                print("[DEBUG _receive] Connection closed by guacd (empty read)")
                 self._logger.info("Connection closed by guacd")
                 break
 
@@ -57,8 +58,10 @@ class AsyncGuacamoleClient:
 
                 if self.state == GuacamoleClientPhase.CONNECTED:
                     try:
+                        print(f"[DEBUG _receive] Forwarding instruction: {instruction.opcode}")
                         await self.on_instruction(instruction)
                     except Exception as e:
+                        print(f"[DEBUG _receive] FAILED to forward: {e}")
                         self._logger.warning(f"Failed to forward instruction to WebSocket client: {e}")
                         return
                 else:
@@ -94,6 +97,7 @@ class AsyncGuacamoleClient:
         if not self.writer:
             raise IOError("Transport is not open")
         self.writer.write(data.encode("utf-8"))
+        await self.writer.drain()
         
 
     async def send_instruction(self, instruction: GuacamoleProtocol):
@@ -133,14 +137,29 @@ class AsyncGuacamoleClient:
             await self.close()
             raise e
 
+        # guacd 1.5+ zwraca VERSION_x_y_z jako pierwszy argument
+        # Trzeba go odesłać jako pierwszy argument w 'connect'
+        guacd_args = list(args_instruction.args)
+        guacd_version = None
+        if guacd_args and guacd_args[0].startswith('VERSION_'):
+            guacd_version = guacd_args[0]
+            guacd_args = guacd_args[1:]  # reszta to faktyczne parametry połączenia
+            self._logger.info(f"guacd version negotiation: {guacd_version}")
+
         await self.send_instruction(GuacamoleProtocol('size', width, height, dpi))
         await self.send_instruction(GuacamoleProtocol('audio', *([] if audio is None else audio)))
         await self.send_instruction(GuacamoleProtocol('video', *([] if video is None else video)))
         await self.send_instruction(GuacamoleProtocol('image', *([] if image is None else image)))
 
         connection_args = [
-            kwargs.get(argument.replace('-', '_'), '') for argument in args_instruction.args
+            kwargs.get(argument.replace('-', '_'), '') for argument in guacd_args
         ]
+        # Jeśli guacd 1.5+, VERSION musi być pierwszym argumentem connect
+        if guacd_version:
+            connection_args = [guacd_version] + connection_args
+
+        print(f"[DEBUG] guacd expects args: {list(args_instruction.args)}")
+        print(f"[DEBUG] Sending connect with {len(connection_args)} args")
         await self.send_instruction(GuacamoleProtocol('connect', *connection_args))
 
         try:
