@@ -21,6 +21,10 @@ declare module 'guacamole-common-js' {
 
         class Display {
             getElement(): HTMLElement;
+            getWidth(): number;
+            getHeight(): number;
+            scale(scale: number): void;
+            onresize: ((width: number, height: number) => void) | null;
         }
 
         class WebSocketTunnel {

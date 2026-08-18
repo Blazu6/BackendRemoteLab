@@ -37,6 +37,9 @@ export function useGuacamole() {
         }
 
         if (client) {
+            if ((client as any).__rescaleCleanup) {
+                (client as any).__rescaleCleanup();
+            }
             client.disconnect();
             client = null;
         }
@@ -68,9 +71,29 @@ export function useGuacamole() {
         client = new Guacamole.Client(tunnel);
 
         // 4. Podpięcie elementu wyjściowego (Canvas) do kontenera w HTML
-        const displayElement = client.getDisplay().getElement();
+        const display = client.getDisplay();
+        const displayElement = display.getElement();
         displayContainer.innerHTML = '';
         displayContainer.appendChild(displayElement);
+
+        // 4a. Auto-skalowanie display'a do rozmiaru kontenera (ważne dla VNC/RDP)
+        const rescale = () => {
+            if (!client) return;
+            const containerWidth = displayContainer.clientWidth;
+            const displayWidth = display.getWidth();
+            if (displayWidth > 0 && containerWidth > 0) {
+                const scale = Math.min(containerWidth / displayWidth, 1);
+                display.scale(scale);
+            }
+        };
+
+        display.onresize = (_width: number, _height: number) => {
+            rescale();
+        };
+
+        window.addEventListener('resize', rescale);
+        // Zapisujemy referencję do cleanup w disconnect
+        (client as any).__rescaleCleanup = () => window.removeEventListener('resize', rescale);
 
         // 5. Inicjalizacja klawiatury (globalnie)
         keyboard = new Guacamole.Keyboard(document);

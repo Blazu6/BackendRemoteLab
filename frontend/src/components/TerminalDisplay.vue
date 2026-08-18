@@ -24,7 +24,7 @@
 
       <div class="form-group">
         <label>Użytkownik:</label>
-        <input v-model="form.username" type="text" required />
+        <input v-model="form.username" type="text" />
       </div>
 
       <div class="form-group">
