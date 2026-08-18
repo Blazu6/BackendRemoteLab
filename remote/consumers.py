@@ -6,6 +6,19 @@ from django.conf import settings
 from .client_async import AsyncGuacamoleClient
 from .protocol import GuacamoleProtocol
 
+# Polecenie startowe dla SSH: uruchamia bash bez plików rc,
+# które generują sekwencje OSC nieobsługiwane przez guacd.
+# Ładujemy tylko /etc/environment (podstawowy PATH) przed startem.
+_SSH_CLEAN_SHELL = (
+    'bash -c \''
+    '[ -f /etc/environment ] && export $(grep -v "^#" /etc/environment | xargs) 2>/dev/null;'
+    ' unset PROMPT_COMMAND;'
+    ' exec bash --norc --noprofile -i'
+    '\''
+)
+###do zmiany narazie tak tylko
+
+
 class GuacamoleConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -32,6 +45,12 @@ class GuacamoleConsumer(AsyncWebsocketConsumer):
         username = params.get('username', [''])[0]
         password = params.get('password', [''])[0]
 
+        # Dodatkowe parametry dla SSH — czysta powłoka bez sekwencji VTE/systemd
+        ssh_extras = {}
+        if protocol == 'ssh':
+            ssh_extras['command'] = _SSH_CLEAN_SHELL
+        ##potem do zmiany 
+
         try:
             self._client = AsyncGuacamoleClient(
                 settings.GUACD_HOST, 
@@ -47,6 +66,8 @@ class GuacamoleConsumer(AsyncWebsocketConsumer):
                 port=port,
                 username=username,
                 password=password,
+                terminal_type='xterm-256color',
+                **ssh_extras,
             )
             print(f"[DEBUG] Handshake completed successfully!")
         except Exception as e:
@@ -61,5 +82,6 @@ class GuacamoleConsumer(AsyncWebsocketConsumer):
 
     async def handle_guacamole_data(self, instruction: GuacamoleProtocol):
         await self.send(text_data=instruction.encode())
+
 
     

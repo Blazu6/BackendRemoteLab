@@ -1,0 +1,33 @@
+services:
+  guacd:
+    image: guacamole/guacd:latest
+    container_name: guacd
+    ports:
+      - "4822:4822"
+    restart: unless-stopped
+  test-ssh:
+    image: lscr.io/linuxserver/openssh-server:latest
+    container_name: test-ssh
+    environment:
+      - TZ=Europe/Warsaw
+      - USER_NAME=labuser
+      - USER_PASSWORD=labpass
+      - PASSWORD_ACCESS=true
+    ports:
+      - "2222:2222"
+    restart: unless-stopped
+  test-vnc:
+    image: accetto/ubuntu-vnc-xfce-g3:latest
+    container_name: test-vnc
+    environment:
+      - VNC_PW=labpass
+    ports:
+      - "5901:5901" # Dla Guacamole (Natywne VNC)
+      - "6901:6901" # Opcjonalnie: bezpośrednio w przeglądarce (noVNC)
+    restart: unless-stopped
+  test-rdp:
+    image: scottyhardy/docker-remote-desktop:latest
+    container_name: test-rdp
+    ports:
+      - "3390:3389"
+    restart: unless-stopped
