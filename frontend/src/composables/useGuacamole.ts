@@ -9,6 +9,8 @@ export interface ConnectionConfig {
     port: string;
     username?: string;
     password?: string;
+    shadow?: 'readonly' | 'interactive' | boolean;
+    is_active?: boolean;
 }
 
 export function useGuacamole() {
@@ -67,10 +69,12 @@ export function useGuacamole() {
         errorMessage.value = null;
 
         // 2. Budujemy parametry zapytania (tylko ID maszyny i rozmiar)
+        const shadowParam = config.shadow === true ? 'interactive' : (config.shadow || undefined);
         const queryParams = new URLSearchParams({
             machine_id: config.id ? config.id.toString() : '',
             width: displayContainer.clientWidth.toString(),
-            height: displayContainer.clientHeight.toString()
+            height: displayContainer.clientHeight.toString(),
+            ...(shadowParam ? { shadow: shadowParam } : {})
         }).toString();
 
         // 3. Utworzenie tunelu WebSocket oraz Klienta Guacamole
@@ -80,6 +84,7 @@ export function useGuacamole() {
 
         // 4. Podpięcie elementu wyjściowego (Canvas) do kontenera w HTML
         const display = client.getDisplay();
+
         const displayElement = display.getElement();
         displayContainer.innerHTML = '';
         displayContainer.appendChild(displayElement);
@@ -99,8 +104,14 @@ export function useGuacamole() {
                     containerHeight / displayHeight
                 );
                 display.scale(scale);
+
+                // Ręczne centrowanie elementu (zamiast flexboxa, który psuł transform-origin: 0 0)
+                const scaledWidth = displayWidth * scale;
+                const scaledHeight = displayHeight * scale;
+                displayElement.style.marginLeft = `${(containerWidth - scaledWidth) / 2}px`;
+                displayElement.style.marginTop = `${(containerHeight - scaledHeight) / 2}px`;
             }
-            
+
             // Wysłanie nowej rozdzielczości do serwera zdalnego (wymusza np. zmianę kolumn/wierszy w SSH)
             if (isConnected.value) {
                 (client as any).sendSize(containerWidth, containerHeight);
@@ -114,30 +125,32 @@ export function useGuacamole() {
         window.addEventListener('resize', rescale);
         rescaleFn = rescale;
 
-        // 5. Inicjalizacja klawiatury (tylko dla kontenera, żeby nie psuć formularzy)
-        displayContainer.setAttribute('tabindex', '0');
-        // Usunięcie outline (focus ring), żeby nie szpecił terminala
-        displayContainer.style.outline = 'none';
-        
-        keyboard = new Guacamole.Keyboard(displayContainer);
-        keyboard.onkeydown = (keysym: number) => {
-            if (client && isConnected.value) {
-                client.sendKeyEvent(1, keysym);
-            }
-        };
-        keyboard.onkeyup = (keysym: number) => {
-            if (client && isConnected.value) {
-                client.sendKeyEvent(0, keysym);
-            }
-        };
+        // 5. Inicjalizacja klawiatury i myszy (Tylko jeśli to nie jest tryb read-only!)
+        if (config.shadow !== 'readonly') {
+            displayContainer.setAttribute('tabindex', '0');
+            displayContainer.style.outline = 'none';
 
-        // 6. Inicjalizacja myszy (na elemencie terminala)
-        mouse = new Guacamole.Mouse(displayElement);
-        mouse.onmousedown = mouse.onmouseup = mouse.onmousemove = (mouseState: Guacamole.Mouse.State) => {
-            if (client && isConnected.value) {
-                client.sendMouseState(mouseState);
-            }
-        };
+            keyboard = new Guacamole.Keyboard(displayContainer);
+            keyboard.onkeydown = (keysym: number) => {
+                if (client && isConnected.value) client.sendKeyEvent(1, keysym);
+            };
+            keyboard.onkeyup = (keysym: number) => {
+                if (client && isConnected.value) client.sendKeyEvent(0, keysym);
+            };
+
+            mouse = new Guacamole.Mouse(displayElement);
+            mouse.onmousedown = mouse.onmouseup = mouse.onmousemove = (mouseState: Guacamole.Mouse.State) => {
+                if (client && isConnected.value) {
+                    client.sendMouseState(mouseState);
+                }
+            };
+
+            // Przywrócono na życzenie: ukrywamy sprzętowy kursor
+            displayElement.style.cursor = 'none';
+        } else {
+            // W trybie podglądu pokazujemy zwykły kursor
+            displayElement.style.cursor = 'default';
+        }
 
         // 7. Obsługa schowka (Remote -> Local)
         (client as any).onclipboard = (stream: any, mimetype: string) => {
@@ -181,7 +194,7 @@ export function useGuacamole() {
             connectionState.value = state;
             // Stan 3 odpowiada wartości CONNECTED w Guacamole.Client
             isConnected.value = state === 3;
-            
+
             // Wymuszenie skalowania gdy element staje się widoczny (v-show)
             if (state === 3) {
                 // setTimeout daje czas na nałożenie v-show przez Vue i wyliczenie rozmiarów (zwiększone z 50 do 150)

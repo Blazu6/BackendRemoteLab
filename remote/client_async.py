@@ -58,10 +58,8 @@ class AsyncGuacamoleClient:
 
                 if self.state == GuacamoleClientPhase.CONNECTED:
                     try:
-                        print(f"[DEBUG _receive] Forwarding instruction: {instruction.opcode}")
                         await self.on_instruction(instruction)
                     except Exception as e:
-                        print(f"[DEBUG _receive] FAILED to forward: {e}")
                         self._logger.warning(f"Failed to forward instruction to WebSocket client: {e}")
                         return
                 else:

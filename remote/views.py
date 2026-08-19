@@ -5,6 +5,7 @@ from django.shortcuts import render
 import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.core.cache import cache
 from .models import Machine
 
 def index(request):
@@ -16,6 +17,7 @@ def machines_api(request):
         machines = Machine.objects.all().order_by('-created_at')
         data = []
         for m in machines:
+            is_active = cache.get(f"guacd_session_{m.id}") is not None
             data.append({
                 'id': m.id,
                 'name': m.name,
@@ -23,6 +25,7 @@ def machines_api(request):
                 'hostname': m.hostname,
                 'port': m.port,
                 'username': m.username,
+                'is_active': is_active
                 # Nigdy nie zwracamy haseł do frontendu!
             })
         return JsonResponse(data, safe=False)

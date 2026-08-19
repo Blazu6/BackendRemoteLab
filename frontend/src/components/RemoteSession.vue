@@ -250,14 +250,7 @@ Ale my po prostu ukrywamy główny widok w App.vue, a samo okno zmniejszamy, gdy
   flex: 1;
   background: #000;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Kursor ukryty tylko na samym obrazie zdalnym, żeby można było używać myszki na obramowaniu */
-.display-viewport :deep(> div) {
-  cursor: none;
+  /* Usunięto flex centering, bo gryzie się z transform: scale() i ucina ekran */
 }
 
 .error-overlay {

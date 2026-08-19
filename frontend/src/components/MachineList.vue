@@ -17,7 +17,13 @@
         <div class="machine-header">
           <span class="protocol-badge" :class="machine.protocol">{{ machine.protocol.toUpperCase() }}</span>
           <h3>{{ machine.name }}</h3>
-          <button class="delete-btn" @click.stop="deleteMachine(machine.id!)" title="Usuń serwer">🗑️</button>
+          <div class="actions">
+            <template v-if="machine.is_active">
+              <button class="shadow-btn readonly" @click.stop="$emit('connect', { ...machine, shadow: 'readonly' })" title="Tylko obserwuj">👁️ Podgląd</button>
+              <button class="shadow-btn interactive" @click.stop="$emit('connect', { ...machine, shadow: 'interactive' })" title="Współdziel myszkę i klawiaturę">🕹️ Steruj</button>
+            </template>
+            <button class="delete-btn" @click.stop="deleteMachine(machine.id!)" title="Usuń serwer">🗑️</button>
+          </div>
         </div>
         <div class="machine-details">
           <span>{{ machine.hostname }}:{{ machine.port }}</span>
@@ -29,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import type { ConnectionConfig } from '../composables/useGuacamole';
 
 const emit = defineEmits<{
@@ -38,9 +44,9 @@ const emit = defineEmits<{
 
 const machines = ref<ConnectionConfig[]>([]);
 const loading = ref(true);
+let pollInterval: ReturnType<typeof setInterval> | null = null;
 
 const fetchMachines = async () => {
-  loading.value = true;
   try {
     const res = await fetch('/api/machines/');
     if (res.ok) {
@@ -75,6 +81,14 @@ const deleteMachine = async (id: number) => {
 
 onMounted(() => {
   fetchMachines();
+  // Odświeżaj listę co 3 sekundy, żeby widzieć kto jest aktywny (dla trybu Podglądu)
+  pollInterval = setInterval(fetchMachines, 3000);
+});
+
+onUnmounted(() => {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+  }
 });
 
 defineExpose({
@@ -120,8 +134,14 @@ defineExpose({
 .machine-header {
   display: flex;
   align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.actions {
+  display: flex;
+  margin-left: auto;
   gap: 0.5rem;
-  margin-bottom: 0.8rem;
 }
 
 .machine-header h3 {
@@ -137,17 +157,46 @@ defineExpose({
 .delete-btn {
   background: transparent;
   border: none;
-  color: #f38ba8;
   cursor: pointer;
-  padding: 0.2rem;
-  border-radius: 4px;
-  opacity: 0.6;
-  transition: all 0.2s;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+  padding: 0;
+  font-size: 1.1rem;
 }
 
 .delete-btn:hover {
   opacity: 1;
-  background: rgba(243, 139, 168, 0.15);
+}
+
+.shadow-btn {
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.shadow-btn.readonly {
+  background: rgba(137, 180, 250, 0.2);
+  border: 1px solid #89b4fa;
+  color: #89b4fa;
+}
+
+.shadow-btn.readonly:hover {
+  background: #89b4fa;
+  color: #11111b;
+}
+
+.shadow-btn.interactive {
+  background: rgba(249, 226, 175, 0.2);
+  border: 1px solid #f9e2af;
+  color: #f9e2af;
+}
+
+.shadow-btn.interactive:hover {
+  background: #f9e2af;
+  color: #11111b;
 }
 
 .protocol-badge {

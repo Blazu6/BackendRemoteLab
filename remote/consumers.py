@@ -2,6 +2,7 @@ from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
 
 from django.conf import settings
+from django.core.cache import cache
 from channels.db import database_sync_to_async
 from .models import Machine
 from .client_async import AsyncGuacamoleClient
@@ -12,6 +13,8 @@ class GuacamoleConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._client = None
+        self.machine_id = None
+        self.is_primary = False
                 
 
     async def receive(self, text_data=None, bytes_data=None):
@@ -29,10 +32,14 @@ class GuacamoleConsumer(AsyncWebsocketConsumer):
         params = parse_qs(query_string)
         print(f"Po sprarsowaniu {params}")
         machine_id = params.get('machine_id', [None])[0]
+        shadow = params.get('shadow', ['false'])[0]
+        
         if not machine_id:
             print("[ERROR] No machine_id provided")
             await self.close()
             return
+            
+        self.machine_id = machine_id
             
         try:
             # Bezpieczne pobranie danych z bazy danych
@@ -58,6 +65,9 @@ class GuacamoleConsumer(AsyncWebsocketConsumer):
         elif protocol == 'rdp':
             extras['ignore_cert'] = 'true'
             extras['security'] = 'rdp'
+            
+        if shadow == 'readonly':
+            extras['read_only'] = 'true'
 
         try:    
             self._client = AsyncGuacamoleClient(
@@ -68,16 +78,38 @@ class GuacamoleConsumer(AsyncWebsocketConsumer):
             print(f"[DEBUG] Connecting to guacd at {settings.GUACD_HOST}:{settings.GUACD_PORT}")
             await self._client.open()
             print(f"[DEBUG] Connected to guacd, starting handshake...")
-            await self._client.handshake(
-                protocol=protocol,
-                hostname=hostname,
-                port=port,
-                username=username,
-                password=password,
-                width=width,
-                height=height,
-                **extras,
-            )
+            
+            if shadow in ['readonly', 'interactive', 'true']:
+                # Tryb podglądu (Shadow) - pobieramy connection_id z Redisa
+                connectionid = await cache.aget(f"guacd_session_{self.machine_id}")
+                if not connectionid:
+                    print(f"[ERROR] Brak aktywnej sesji dla maszyny {self.machine_id} w Redis!")
+                    await self.close()
+                    return
+                print(f"[DEBUG] Dolaczam do istniejacej sesji: {connectionid} w trybie {shadow}")
+                await self._client.handshake(
+                    connectionid=connectionid,
+                    width=width,
+                    height=height,
+                    **extras
+                )
+            else:
+                # Standardowe nawiązanie nowej sesji
+                await self._client.handshake(
+                    protocol=protocol,
+                    hostname=hostname,
+                    port=port,
+                    username=username,
+                    password=password,
+                    width=width,
+                    height=height,
+                    **extras,
+                )
+                self.is_primary = True
+                # Zapisujemy wynegocjowane connection_id do Redis, aby inni mogli podglądać
+                await cache.aset(f"guacd_session_{self.machine_id}", self._client.id, timeout=86400)
+                print(f"[DEBUG] Zapisano connection_id do Redis: {self._client.id}")
+                
             print(f"[DEBUG] Handshake completed successfully!")
         except Exception as e:
             import traceback
@@ -86,6 +118,11 @@ class GuacamoleConsumer(AsyncWebsocketConsumer):
             await self.close()
 
     async def disconnect(self, close_code):
+        if self.is_primary and self.machine_id:
+            # Czyszczenie wpisu w Redis, by ikona "Podgląd" zniknęła
+            await cache.adelete(f"guacd_session_{self.machine_id}")
+            print(f"[DEBUG] Usunieto sesje maszyny {self.machine_id} z Redis")
+            
         if self._client is not None:
             await self._client.close()
 

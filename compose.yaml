@@ -1,4 +1,10 @@
 services:
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
   guacd:
     image: guacamole/guacd:1.5.5
     container_name: guacd
