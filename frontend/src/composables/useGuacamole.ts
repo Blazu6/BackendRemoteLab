@@ -21,6 +21,7 @@ export function useGuacamole() {
     let keyboard: Guacamole.Keyboard | null = null;
     let mouse: Guacamole.Mouse | null = null;
     let rescaleFn: (() => void) | null = null;
+    let syncLocalClipboardToRemote: (() => Promise<void>) | null = null;
     let isKeyboardEnabled = true;
 
     /**
@@ -44,6 +45,10 @@ export function useGuacamole() {
             if (rescaleFn) {
                 window.removeEventListener('resize', rescaleFn);
                 rescaleFn = null;
+            }
+            if (syncLocalClipboardToRemote) {
+                window.removeEventListener('focus', syncLocalClipboardToRemote);
+                syncLocalClipboardToRemote = null;
             }
             client.disconnect();
             client = null;
@@ -134,7 +139,43 @@ export function useGuacamole() {
             }
         };
 
-        // 7. Obsługa zmian stanu połączenia
+        // 7. Obsługa schowka (Remote -> Local)
+        (client as any).onclipboard = (stream: any, mimetype: string) => {
+            if (mimetype === 'text/plain') {
+                const reader = new (Guacamole as any).StringReader(stream);
+                let data = '';
+                reader.ontext = (text: string) => { data += text; };
+                reader.onend = () => {
+                    if (navigator.clipboard) {
+                        navigator.clipboard.writeText(data).catch(err => {
+                            console.warn('Nie można zapisać do lokalnego schowka:', err);
+                        });
+                    }
+                };
+            }
+        };
+
+        // 8. Obsługa schowka (Local -> Remote)
+        syncLocalClipboardToRemote = async () => {
+            if (!client || !isConnected.value || !navigator.clipboard) return;
+            try {
+                const text = await navigator.clipboard.readText();
+                if (text) {
+                    const stream = (client as any).createClipboardStream('text/plain');
+                    const writer = new (Guacamole as any).StringWriter(stream);
+                    writer.sendText(text);
+                    writer.sendEnd();
+                }
+            } catch (err) {
+                console.warn('Nie można odczytać lokalnego schowka (może brak uprawnień):', err);
+            }
+        };
+
+        window.addEventListener('focus', syncLocalClipboardToRemote);
+        // Synchronizacja przy kliknięciu/wejściu w obszar terminala dla pewności
+        displayContainer.addEventListener('mouseenter', syncLocalClipboardToRemote);
+
+        // 9. Obsługa zmian stanu połączenia
         client.onstatechange = (state: number) => {
             console.log('🔄 Stan klienta Guacamole:', state);
             connectionState.value = state;
@@ -154,7 +195,7 @@ export function useGuacamole() {
             isConnected.value = false;
         };
 
-        // 8. Rozpoczęcie procesu łączenia (query trafia jako ?query do URL tunelu)
+        // 10. Rozpoczęcie procesu łączenia (query trafia jako ?query do URL tunelu)
         client.connect(queryParams);
     };
 

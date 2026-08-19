@@ -53,3 +53,35 @@ def machine_detail_api(request, machine_id):
             return JsonResponse({'status': 'error', 'message': 'Machine not found'}, status=404)
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+@csrf_exempt
+def pdu_api(request):
+    """
+    Zaślepka (placeholder) dla integracji z listami zasilającymi (PDU).
+    Tutaj inni programiści powinni zaimplementować sterowanie portami i pobieranie statusu.
+    """
+    if request.method == 'GET':
+        return JsonResponse({
+            'status': 'success',
+            'data': [
+                {'id': 1, 'name': 'PDU-1 Port 1', 'state': 'ON'},
+                {'id': 2, 'name': 'PDU-1 Port 2', 'state': 'OFF'}
+            ]
+        })
+    return JsonResponse({'status': 'error', 'message': 'Metoda nieobsługiwana'}, status=405)
+
+@csrf_exempt
+def cameras_api(request):
+    """
+    Zaślepka (placeholder) dla integracji ze strumieniami wideo (MediaMTX).
+    Tutaj inni programiści powinni zaimplementować pobieranie listy kamer.
+    """
+    if request.method == 'GET':
+        return JsonResponse({
+            'status': 'success',
+            'cameras': [
+                {'id': 'cam1', 'name': 'Laboratorium 1 - Przód', 'stream_url': 'rtsp://...'},
+                {'id': 'cam2', 'name': 'Laboratorium 1 - Tył', 'stream_url': 'rtsp://...'}
+            ]
+        })
+    return JsonResponse({'status': 'error', 'message': 'Metoda nieobsługiwana'}, status=405)

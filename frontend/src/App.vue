@@ -1,36 +1,71 @@
 <template>
   <main class="app-layout">
-    <header class="app-header">
-      <h1>Remote Lab 🧪</h1>
-    </header>
+    <aside class="app-sidebar" v-show="!activeSessionId">
+      <div class="logo">Remote Lab 🧪</div>
+      <nav class="nav-menu">
+        <button 
+          :class="{ active: currentView === 'machines' }" 
+          @click="currentView = 'machines'"
+        >
+          🖥️ Zdalny Dostęp
+        </button>
+        <button 
+          :class="{ active: currentView === 'pdu' }" 
+          @click="currentView = 'pdu'"
+        >
+          ⚡ Zasilanie PDU
+        </button>
+        <button 
+          :class="{ active: currentView === 'cameras' }" 
+          @click="currentView = 'cameras'"
+        >
+          📷 Kamery
+        </button>
+      </nav>
+    </aside>
 
-    <div class="main-stage">
-      <!-- Formularz pokazujemy, jeśli nie ma żadnej aktywnej (pełnoekranowej) sesji -->
-      <div v-show="!activeSessionId" class="dashboard-container">
-        <div class="form-section">
-          <ConnectionForm @saved="handleSaved" />
+    <div class="main-content">
+      <div class="main-stage">
+        
+        <!-- Widok Maszyn (Istniejący) -->
+        <template v-if="currentView === 'machines'">
+          <div v-show="!activeSessionId" class="dashboard-container">
+            <div class="form-section">
+              <ConnectionForm @saved="handleSaved" />
+            </div>
+            <div class="list-section">
+              <MachineList ref="machineListRef" @connect="handleConnect" />
+            </div>
+          </div>
+
+          <!-- Aktywne sesje maszyn -->
+          <RemoteSession
+            v-for="session in sessions"
+            :key="session.id"
+            :config="session.config"
+            :is-active="activeSessionId === session.id"
+            ref="sessionRefs"
+            @activate="activateSession(session.id)"
+            @minimize="handleMinimize(session.id, $event)"
+            @close="removeSession(session.id)"
+          />
+        </template>
+
+        <!-- Widok PDU -->
+        <div v-if="currentView === 'pdu'" class="module-container">
+          <PDUControl />
         </div>
-        <div class="list-section">
-          <MachineList ref="machineListRef" @connect="handleConnect" />
+
+        <!-- Widok Kamer -->
+        <div v-if="currentView === 'cameras'" class="module-container">
+          <CameraView />
         </div>
       </div>
 
-      <!-- Wyświetlanie wszystkich sesji. Teleportują się do #dock gdy są zminimalizowane -->
-      <RemoteSession
-        v-for="session in sessions"
-        :key="session.id"
-        :config="session.config"
-        :is-active="activeSessionId === session.id"
-        ref="sessionRefs"
-        @activate="activateSession(session.id)"
-        @minimize="handleMinimize(session.id, $event)"
-        @close="removeSession(session.id)"
-      />
-    </div>
-
-    <!-- Pasek zadań na zminimalizowane sesje (Dock) -->
-    <div id="dock" class="dock-container" :class="{ 'has-items': hasMinimizedSessions }">
-      <!-- Teleporty będą wrzucać tutaj DOM zminimalizowanych RemoteSession -->
+      <!-- Pasek zadań na zminimalizowane sesje (Dock) -->
+      <div id="dock" class="dock-container" :class="{ 'has-items': hasMinimizedSessions }">
+        <!-- Teleporty będą wrzucać tutaj DOM zminimalizowanych RemoteSession -->
+      </div>
     </div>
   </main>
 </template>
@@ -40,6 +75,8 @@ import { ref, computed } from 'vue';
 import ConnectionForm from './components/ConnectionForm.vue';
 import MachineList from './components/MachineList.vue';
 import RemoteSession from './components/RemoteSession.vue';
+import PDUControl from './components/PDUControl.vue';
+import CameraView from './components/CameraView.vue';
 import type { ConnectionConfig } from './composables/useGuacamole';
 
 interface SessionData {
@@ -48,6 +85,7 @@ interface SessionData {
   isMinimized: boolean;
 }
 
+const currentView = ref('machines');
 const sessions = ref<SessionData[]>([]);
 const activeSessionId = ref<string | null>(null);
 const machineListRef = ref<InstanceType<typeof MachineList> | null>(null);
@@ -124,21 +162,64 @@ body {
 
 .app-layout {
   display: flex;
-  flex-direction: column;
+  flex-direction: row; /* Zmienione na wiersz ze względu na pasek boczny */
   height: 100vh;
+  width: 100vw;
 }
 
-.app-header {
-  padding: 1rem 2rem;
-  background: #1e1e2e;
-  border-bottom: 1px solid #313244;
+.app-sidebar {
+  width: 250px;
+  background: #181825;
+  border-right: 1px solid #313244;
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
 }
 
-.app-header h1 {
-  margin: 0;
+.logo {
+  padding: 1.5rem;
   font-size: 1.5rem;
+  font-weight: bold;
   color: #89b4fa;
+  border-bottom: 1px solid #313244;
+  text-align: center;
+}
+
+.nav-menu {
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 0;
+}
+
+.nav-menu button {
+  background: transparent;
+  border: none;
+  color: #a6adc8;
+  padding: 1rem 1.5rem;
+  text-align: left;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+}
+
+.nav-menu button:hover {
+  background: #1e1e2e;
+  color: #cdd6f4;
+}
+
+.nav-menu button.active {
+  background: #1e1e2e;
+  color: #89b4fa;
+  border-left-color: #89b4fa;
+  font-weight: 600;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .main-stage {
@@ -146,7 +227,13 @@ body {
   flex: 1;
   display: flex;
   padding: 1rem;
-  overflow: hidden; /* zapobiega scrollowaniu gdy okna są absolute */
+  overflow: hidden;
+}
+
+.module-container {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
 }
 
 .dashboard-container {
