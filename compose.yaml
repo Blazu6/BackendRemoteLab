@@ -21,6 +21,7 @@ services:
     container_name: test-vnc
     environment:
       - VNC_PW=labpass
+      - VNC_RESOLUTION=1920x1080
     ports:
       - "5901:5901" # Dla Guacamole (Natywne VNC)
       - "6901:6901" # Opcjonalnie: bezpośrednio w przeglądarce (noVNC)

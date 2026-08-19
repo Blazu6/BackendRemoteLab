@@ -86,8 +86,11 @@ class AsyncGuacamoleClient:
                 pass
 
         if self.writer:
-            self.writer.close()
-            await self.writer.wait_closed()
+            try:
+                self.writer.close()
+                await self.writer.wait_closed()
+            except (ConnectionResetError, BrokenPipeError, OSError):
+                pass
 
         self._read_task = None
         self.writer = None

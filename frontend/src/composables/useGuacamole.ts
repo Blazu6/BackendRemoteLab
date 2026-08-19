@@ -2,10 +2,12 @@ import { ref, onUnmounted } from 'vue';
 import Guacamole from 'guacamole-common-js';
 
 export interface ConnectionConfig {
+    id?: number; // Opcjonalne przed zapisem
+    name?: string;
     protocol: string;
     hostname: string;
     port: string;
-    username: string;
+    username?: string;
     password?: string;
 }
 
@@ -18,6 +20,8 @@ export function useGuacamole() {
     let tunnel: Guacamole.WebSocketTunnel | null = null;
     let keyboard: Guacamole.Keyboard | null = null;
     let mouse: Guacamole.Mouse | null = null;
+    let rescaleFn: (() => void) | null = null;
+    let isKeyboardEnabled = true;
 
     /**
      * Zwalnia zasoby, usuwa nasłuchiwacze i zamyka połączenie
@@ -37,8 +41,9 @@ export function useGuacamole() {
         }
 
         if (client) {
-            if ((client as any).__rescaleCleanup) {
-                (client as any).__rescaleCleanup();
+            if (rescaleFn) {
+                window.removeEventListener('resize', rescaleFn);
+                rescaleFn = null;
             }
             client.disconnect();
             client = null;
@@ -56,13 +61,11 @@ export function useGuacamole() {
         disconnect();
         errorMessage.value = null;
 
-        // 2. Budujemy parametry zapytania
+        // 2. Budujemy parametry zapytania (tylko ID maszyny i rozmiar)
         const queryParams = new URLSearchParams({
-            protocol: config.protocol,
-            hostname: config.hostname,
-            port: config.port,
-            username: config.username,
-            password: config.password || '',
+            machine_id: config.id ? config.id.toString() : '',
+            width: displayContainer.clientWidth.toString(),
+            height: displayContainer.clientHeight.toString()
         }).toString();
 
         // 3. Utworzenie tunelu WebSocket oraz Klienta Guacamole
@@ -80,10 +83,22 @@ export function useGuacamole() {
         const rescale = () => {
             if (!client) return;
             const containerWidth = displayContainer.clientWidth;
+            const containerHeight = displayContainer.clientHeight;
+            // Pomijaj skalowanie gdy kontener jest za mały (np. zminimalizowany)
+            if (containerWidth < 300 || containerHeight < 200) return;
             const displayWidth = display.getWidth();
-            if (displayWidth > 0 && containerWidth > 0) {
-                const scale = Math.min(containerWidth / displayWidth, 1);
+            const displayHeight = display.getHeight();
+            if (displayWidth > 0 && displayHeight > 0) {
+                const scale = Math.min(
+                    containerWidth / displayWidth,
+                    containerHeight / displayHeight
+                );
                 display.scale(scale);
+            }
+            
+            // Wysłanie nowej rozdzielczości do serwera zdalnego (wymusza np. zmianę kolumn/wierszy w SSH)
+            if (isConnected.value) {
+                (client as any).sendSize(containerWidth, containerHeight);
             }
         };
 
@@ -92,11 +107,14 @@ export function useGuacamole() {
         };
 
         window.addEventListener('resize', rescale);
-        // Zapisujemy referencję do cleanup w disconnect
-        (client as any).__rescaleCleanup = () => window.removeEventListener('resize', rescale);
+        rescaleFn = rescale;
 
-        // 5. Inicjalizacja klawiatury (globalnie)
-        keyboard = new Guacamole.Keyboard(document);
+        // 5. Inicjalizacja klawiatury (tylko dla kontenera, żeby nie psuć formularzy)
+        displayContainer.setAttribute('tabindex', '0');
+        // Usunięcie outline (focus ring), żeby nie szpecił terminala
+        displayContainer.style.outline = 'none';
+        
+        keyboard = new Guacamole.Keyboard(displayContainer);
         keyboard.onkeydown = (keysym: number) => {
             if (client && isConnected.value) {
                 client.sendKeyEvent(1, keysym);
@@ -122,6 +140,12 @@ export function useGuacamole() {
             connectionState.value = state;
             // Stan 3 odpowiada wartości CONNECTED w Guacamole.Client
             isConnected.value = state === 3;
+            
+            // Wymuszenie skalowania gdy element staje się widoczny (v-show)
+            if (state === 3) {
+                // setTimeout daje czas na nałożenie v-show przez Vue i wyliczenie rozmiarów (zwiększone z 50 do 150)
+                setTimeout(() => triggerRescale(), 150);
+            }
         };
 
         client.onerror = (error: { message?: string }) => {
@@ -139,11 +163,16 @@ export function useGuacamole() {
         disconnect();
     });
 
+    const triggerRescale = () => {
+        if (rescaleFn) rescaleFn();
+    };
+
     return {
         isConnected,
         connectionState,
         errorMessage,
         connect,
         disconnect,
+        triggerRescale,
     };
 }

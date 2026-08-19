@@ -2,7 +2,8 @@ from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
 
 from django.conf import settings
-
+from channels.db import database_sync_to_async
+from .models import Machine
 from .client_async import AsyncGuacamoleClient
 from .protocol import GuacamoleProtocol
 
@@ -27,11 +28,28 @@ class GuacamoleConsumer(AsyncWebsocketConsumer):
         print(f"Query string {query_string}")
         params = parse_qs(query_string)
         print(f"Po sprarsowaniu {params}")
-        protocol = params.get('protocol', ['ssh'])[0]
-        hostname = params.get('hostname', ['test-ssh'])[0]
-        port = params.get('port', ['2222'])[0]
-        username = params.get('username', [''])[0]
-        password = params.get('password', [''])[0]
+        machine_id = params.get('machine_id', [None])[0]
+        if not machine_id:
+            print("[ERROR] No machine_id provided")
+            await self.close()
+            return
+            
+        try:
+            # Bezpieczne pobranie danych z bazy danych
+            machine = await database_sync_to_async(Machine.objects.get)(id=machine_id)
+        except Machine.DoesNotExist:
+            print(f"[ERROR] Machine with id {machine_id} not found")
+            await self.close()
+            return
+            
+        protocol = machine.protocol
+        hostname = machine.hostname
+        port = str(machine.port)
+        username = machine.username or ''
+        password = machine.password or ''
+        
+        width = int(params.get('width', ['1024'])[0])
+        height = int(params.get('height', ['768'])[0])
 
         # Dodatkowe parametry zależne od protokołu
         extras = {}
@@ -56,6 +74,8 @@ class GuacamoleConsumer(AsyncWebsocketConsumer):
                 port=port,
                 username=username,
                 password=password,
+                width=width,
+                height=height,
                 **extras,
             )
             print(f"[DEBUG] Handshake completed successfully!")
