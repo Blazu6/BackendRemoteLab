@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-**@ata5g4u0ie8!jnb9gwb-e90@g%b5xw^(^!9c)pxiq-gls04
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '192.168.1.88']
 
 GUACD_HOST = "127.0.0.1"
 GUACD_PORT = 4822
