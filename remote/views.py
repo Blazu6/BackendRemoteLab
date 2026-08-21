@@ -1,7 +1,4 @@
 from django.shortcuts import render
-
-# Create your views here.
-
 import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -9,11 +6,7 @@ from django.core.cache import cache
 from .models import Machine, PDU, PDUOutletMapping
 from .services.pdu_factory import get_pdu_driver
 
-class DummyPDU:
-     def __init__(self, ip, protocol, credentials="super_tajne_haslo_pdu"):
-         self.ip_address = ip
-         self.protocol = protocol
-         self.credentials = credentials
+# USUNIĘTO KLASĘ DummyPDU - teraz używamy bazy danych!
 
 def index(request):
     return render(request, 'remote/index.html')
@@ -73,7 +66,8 @@ def pdu_api(request):
         # 1. Jeśli przekazano IP, odpytujemy sprzęt o stany portów oraz pobieramy nazwy własne
         if ip_param:
             try:
-                pdu_instance = DummyPDU(ip_param, 'REST_JSON')
+                # ZMIANA: Pobieramy prawdziwą listwę z bazy danych
+                pdu_instance = PDU.objects.get(ip_address=ip_param)
                 driver = get_pdu_driver(pdu_instance)
                 
                 statuses = {}
@@ -97,6 +91,8 @@ def pdu_api(request):
                     'statuses': statuses,
                     'names': names_mapping
                 })
+            except PDU.DoesNotExist:
+                 return JsonResponse({'status': 'error', 'message': 'Listwa nie istnieje w bazie'}, status=404)
             except Exception as e:
                 return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
         
@@ -130,39 +126,49 @@ def pdu_api(request):
             # Wariant A2: Kliknięcie przycisku ON/OFF na gniazdku
             elif 'action' in body:
                 ip = body.get('ip_address')
-                protocol = body.get('protocol')
                 outlet = body.get('outlet')
                 action = body.get('action')
 
-                if not all([ip, protocol, outlet, action]):
+                if not all([ip, outlet, action]):
                     return JsonResponse({'status': 'error', 'message': 'Brakuje danych w JSON'}, status=400)
 
-                pdu_instance = DummyPDU(ip, protocol)
-                driver = get_pdu_driver(pdu_instance)
+                try:
+                    # ZMIANA: Pobieramy prawdziwą listwę z bazy danych
+                    pdu_instance = PDU.objects.get(ip_address=ip)
+                    driver = get_pdu_driver(pdu_instance)
 
-                if action == 'ON':
-                    success = driver.turn_on(outlet)
-                elif action == 'OFF':
-                    success = driver.turn_off(outlet)
-                else:
-                    return JsonResponse({'status': 'error', 'message': f'Nieznana akcja: {action}'}, status=400)
+                    if action == 'ON':
+                        success = driver.turn_on(outlet)
+                    elif action == 'OFF':
+                        success = driver.turn_off(outlet)
+                    else:
+                        return JsonResponse({'status': 'error', 'message': f'Nieznana akcja: {action}'}, status=400)
 
-                if success:
-                    return JsonResponse({'status': 'success', 'message': f'Wykonano {action} na gniazdku {outlet}'})
-                else:
-                    return JsonResponse({'status': 'error', 'message': 'Sprzęt nie odpowiedział'}, status=500)
+                    if success:
+                        return JsonResponse({'status': 'success', 'message': f'Wykonano {action} na gniazdku {outlet}'})
+                    else:
+                        return JsonResponse({'status': 'error', 'message': 'Sprzęt nie odpowiedział'}, status=500)
+                except PDU.DoesNotExist:
+                     return JsonResponse({'status': 'error', 'message': 'Listwa nie istnieje w bazie'}, status=404)
 
             # Wariant B: Zapisanie nowej listwy do bazy danych
             else:
                 ip = body.get('ip_address')
                 protocol = body.get('protocol', 'REST_JSON')
                 
+                # ZMIANA: Odbieramy hasło (credentials) wysłane z Vue.js
+                credentials = body.get('credentials', '') 
+                
                 if not ip:
                     return JsonResponse({'status': 'error', 'message': 'Brak adresu IP'}, status=400)
 
-                PDU.objects.get_or_create(
+                # ZMIANA: Używamy update_or_create żeby zaktualizować hasło (encrypt zrobi swoje!)
+                PDU.objects.update_or_create(
                     ip_address=ip, 
-                    defaults={'protocol': protocol}
+                    defaults={
+                        'protocol': protocol,
+                        'credentials': credentials
+                    }
                 )
                 return JsonResponse({'status': 'success', 'message': 'Zapisano listwę'})
 

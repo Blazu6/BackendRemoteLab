@@ -1,15 +1,21 @@
-from .pdu_drivers import RestPDUDriver, SNMPPDUDriver
+from .pdu_drivers import RestPDUDriver
+from .snmp_driver import SnmpPDUDriver  # Używamy naszego prawdziwego sterownika SNMP
+
+# Słownik mapujący nazwy protokołów z bazy danych na konkretne klasy sterowników
+DRIVER_MAPPING = {
+    'REST_JSON': RestPDUDriver,
+    'SNMP_V1': SnmpPDUDriver,  # Mapujemy na prawdziwą klasę z pliku snmp_driver.py
+}
 
 def get_pdu_driver(pdu_instance):
-    """Zwraca odpowiedni sterownik na podstawie konfiguracji listwy z bazy."""
+    """
+    Zwraca odpowiednią instancję sterownika na podstawie konfiguracji listwy.
+    Wykorzystuje słownik do dynamicznego dobierania klas.
+    """
+    driver_class = DRIVER_MAPPING.get(pdu_instance.protocol)
     
-    if pdu_instance.protocol == 'REST_JSON':
-        return RestPDUDriver(pdu_instance.ip_address, pdu_instance.credentials)
-        
-    elif pdu_instance.protocol == 'SNMP_V1':
-        return SNMPPDUDriver(pdu_instance.ip_address, pdu_instance.credentials)
-        
-    # Jeśli kiedyś dodasz nowy typ listwy, dopisujesz tutaj kolejne 'elif'
-    
-    else:
+    if not driver_class:
         raise ValueError(f"Nieobsługiwany protokół komunikacji: {pdu_instance.protocol}")
+        
+    # Tworzymy i zwracamy obiekt wybranego sterownika, przekazując IP i hasło
+    return driver_class(pdu_instance.ip_address, pdu_instance.credentials)

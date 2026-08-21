@@ -11,6 +11,11 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+
+# Ładuje zmienne z pliku .env do projektu
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,6 +26,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-**@ata5g4u0ie8!jnb9gwb-e90@g%b5xw^(^!9c)pxiq-gls04'
+
+# Klucz dla django-cryptography
+CRYPTOGRAPHY_SALT = os.getenv('CRYPTOGRAPHY_SALT', 'awaryjny-klucz-szyfrujacy-123')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True

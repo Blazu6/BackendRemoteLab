@@ -12,6 +12,13 @@
           placeholder="Adres IP (np. 192.168.1.45)" 
           class="input-field"
         />
+        <!-- NOWE POLE NA HASŁO -->
+        <input 
+          v-model="newPduCredentials" 
+          type="password" 
+          placeholder="Hasło listwy" 
+          class="input-field"
+        />
         <select v-model="newPduProtocol" class="input-field">
           <option value="REST_JSON">REST API (JSON)</option>
           <option value="SNMP_V1">SNMP v1/v2</option>
@@ -25,7 +32,7 @@
     <!-- Lista dodanych listew i porty -->
     <div class="pdu-list">
       <div v-if="pdus.length === 0" class="empty-state">
-        Brak dodanych listew. Wpisz IP i kliknij DODAJ.
+        Brak dodanych listew. Wpisz IP, hasło i kliknij DODAJ.
       </div>
 
       <div v-for="pdu in pdus" :key="pdu.ip" class="pdu-card">
@@ -42,7 +49,7 @@
             </div>
           </div>
 
-          <!-- Prawa strona nagłówka: Badget oraz nowy guzik USUŃ -->
+          <!-- Prawa strona nagłówka: Badget oraz guzik USUŃ -->
           <div class="header-actions">
             <span class="badge">{{ pdu.protocol }}</span>
             <button class="btn btn-danger" @click="deletePdu(pdu.ip)">USUŃ</button>
@@ -52,7 +59,7 @@
         <!-- Dynamiczna siatka portów na podstawie pobranych stanów -->
         <div class="ports-grid" v-if="pduStatuses[pdu.ip]">
           <div v-for="(state, port) in pduStatuses[pdu.ip]" :key="port" class="port-item">
-            <!-- Edytowalna nazwa gniazdka - Bezpieczny v-model + zapis na Enter/Blur -->
+            <!-- Edytowalna nazwa gniazdka -->
             <input 
               type="text" 
               v-model="pduNames[pdu.ip][Number(port)]" 
@@ -81,6 +88,7 @@ interface PDU {
 
 const newPduIp = ref('');
 const newPduProtocol = ref('REST_JSON');
+const newPduCredentials = ref(''); // ZMIANA: Dodano ref dla hasła
 const pdus = ref<PDU[]>([]);
 
 const pduStatuses = ref<Record<string, Record<number, string>>>({});
@@ -107,13 +115,10 @@ const fetchAllStatuses = async () => {
       const data = await res.json();
       if (data.status === 'success') {
         
-        // Zapewniamy inicjalizację obiektu nazw ZANIM Vue spróbuje go wyrenderować
         if (!pduNames.value[pdu.ip]) {
           pduNames.value[pdu.ip] = {};
         }
         
-        // Ładujemy nazwy z bazy TYLKO, jeśli w Vue jest pusto.
-        // Dzięki temu odświeżanie w tle nie skasuje Ci tekstu, który właśnie wpisujesz!
         if (data.names) {
           for (const port in data.names) {
             if (pduNames.value[pdu.ip][port] === undefined) {
@@ -122,7 +127,6 @@ const fetchAllStatuses = async () => {
           }
         }
 
-        // Dopiero teraz aktualizujemy statusy (co aktywuje renderowanie HTML)
         pduStatuses.value[pdu.ip] = data.statuses;
       }
     } catch (err) {
@@ -133,7 +137,6 @@ const fetchAllStatuses = async () => {
 
 onMounted(() => {
   fetchPdus();
-  // Zmieniono interwał na 7 sekund (7000 ms)
   pollInterval = window.setInterval(fetchAllStatuses, 7000);
 });
 
@@ -150,13 +153,15 @@ const saveNewPdu = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ip_address: newPduIp.value,
-        protocol: newPduProtocol.value
+        protocol: newPduProtocol.value,
+        credentials: newPduCredentials.value // ZMIANA: Wysłanie hasła w paczce JSON
       })
     });
     
     const data = await res.json();
     if (res.ok && data.status === 'success') {
       newPduIp.value = '';
+      newPduCredentials.value = ''; // ZMIANA: Czyszczenie pola z hasłem po dodaniu
       await fetchPdus();
     } else {
       alert(`Błąd zapisu: ${data.message}`);
@@ -166,7 +171,6 @@ const saveNewPdu = async () => {
   }
 };
 
-// Funkcja zapisująca nazwę gniazdka po wciśnięciu Enter / odkliknięciu
 const saveOutletName = async (ip: string, port: number, newName: string) => {
   try {
     const res = await fetch('/api/pdu/', {
@@ -176,7 +180,7 @@ const saveOutletName = async (ip: string, port: number, newName: string) => {
         action: 'rename',
         ip_address: ip,
         outlet: port,
-        name: newName || '' // Jeśli ktoś skasuje nazwę, zapiszemy puste pole
+        name: newName || ''
       })
     });
     const data = await res.json();
@@ -192,7 +196,6 @@ const saveOutletName = async (ip: string, port: number, newName: string) => {
   }
 };
 
-// Funkcja usuwająca listwę
 const deletePdu = async (ip: string) => {
   if (!confirm(`Czy na pewno chcesz usunąć listwę ${ip}?`)) return;
 

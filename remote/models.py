@@ -1,4 +1,30 @@
+import base64
+import hashlib
+from cryptography.fernet import Fernet
+from django.conf import settings
 from django.db import models
+
+# --- Nasz własny silnik szyfrujący (odporny na błędy nowszych wersji Django) ---
+def get_cipher():
+    key = hashlib.sha256(settings.SECRET_KEY.encode('utf-8')).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
+
+class EncryptedCharField(models.CharField):
+    def from_db_value(self, value, expression, connection):
+        if not value:
+            return value
+        try:
+            return get_cipher().decrypt(value.encode('utf-8')).decode('utf-8')
+        except Exception:
+            return value
+
+    def get_prep_value(self, value):
+        if not value:
+            return value
+        return get_cipher().encrypt(str(value).encode('utf-8')).decode('utf-8')
+
+
+# --- TWOJE MODELE ---
 
 class Machine(models.Model):
     name = models.CharField(max_length=100, help_text="Nazwa przyjazna dla użytkownika (np. Główny Serwer)")
@@ -6,6 +32,7 @@ class Machine(models.Model):
     hostname = models.CharField(max_length=255)
     port = models.IntegerField()
     username = models.CharField(max_length=100, blank=True, null=True)
+    # Zgodnie z życzeniem - Machine nie tknięte!
     password = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -15,6 +42,10 @@ class Machine(models.Model):
 class PDU(models.Model):
     ip_address = models.CharField(max_length=50, unique=True)
     protocol = models.CharField(max_length=50, default='REST_JSON')
+    
+    # ZMIANA: Używamy naszego pola szyfrującego TYLKO tutaj
+    credentials = EncryptedCharField(max_length=255, blank=True, null=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
