@@ -3,8 +3,9 @@ import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.core.cache import cache
-from .models import Machine, PDU, PDUOutletMapping
+from .models import Machine, PDU, PDUOutletMapping, Document
 from .services.pdu_factory import get_pdu_driver
+import os
 
 # USUNIĘTO KLASĘ DummyPDU - teraz używamy bazy danych!
 
@@ -212,4 +213,73 @@ def cameras_api(request):
                 {'id': 'cam2', 'name': 'Laboratorium 1 - Tył', 'stream_url': 'rtsp://...'}
             ]
         })
+    return JsonResponse({'status': 'error', 'message': 'Metoda nieobsługiwana'}, status=405)
+
+    # ==========================================
+# NOWE WIDOKI DLA INSTRUKCJI PDF
+# ==========================================
+
+@csrf_exempt
+def documents_api(request):
+    if request.method == 'GET':
+        # Pobieranie listy wszystkich dokumentów
+        docs = Document.objects.all().order_by('-uploaded_at')
+        data = [{
+            'id': d.id,
+            'title': d.title,
+            'type': d.doc_type,
+            'url': d.file.url  # Generuje link typu /media/instructions/plik.pdf
+        } for d in docs]
+        return JsonResponse(data, safe=False)
+
+    elif request.method == 'POST':
+        # Wgrywanie nowego dokumentu. 
+        # Zauważ, że pobieramy dane z request.POST i request.FILES
+        title = request.POST.get('title')
+        doc_type = request.POST.get('type')
+        file_obj = request.FILES.get('file')
+
+        if not title or not file_obj:
+            return JsonResponse({'status': 'error', 'message': 'Brak tytułu lub pliku'}, status=400)
+
+        try:
+            doc = Document.objects.create(
+                title=title,
+                doc_type=doc_type,
+                file=file_obj
+            )
+            return JsonResponse({
+                'status': 'success',
+                'id': doc.id,
+                'title': doc.title,
+                'type': doc.doc_type,
+                'url': doc.file.url
+            })
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+    return JsonResponse({'status': 'error', 'message': 'Metoda nieobsługiwana'}, status=405)
+
+@csrf_exempt
+def document_detail_api(request, document_id):
+    if request.method == 'DELETE':
+        try:
+            doc = Document.objects.get(id=document_id)
+            
+            # --- NOWY KOD: Fizyczne usuwanie pliku z dysku ---
+            if doc.file:
+                file_path = doc.file.path
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            # -------------------------------------------------
+            
+            # Usuwa wpis z bazy documents.sqlite3
+            doc.delete() 
+            return JsonResponse({'status': 'success'})
+            
+        except Document.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Nie znaleziono pliku'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
     return JsonResponse({'status': 'error', 'message': 'Metoda nieobsługiwana'}, status=405)

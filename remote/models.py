@@ -4,6 +4,7 @@ from cryptography.fernet import Fernet
 from django.conf import settings
 from django.db import models
 
+
 # --- Nasz własny silnik szyfrujący (odporny na błędy nowszych wersji Django) ---
 def get_cipher():
     key = hashlib.sha256(settings.SECRET_KEY.encode('utf-8')).digest()
@@ -62,3 +63,12 @@ class PDUOutletMapping(models.Model):
 
     def __str__(self):
         return f"{self.pdu_ip} [Port {self.outlet_id}] -> {self.custom_name}"
+
+class Document(models.Model):
+    title = models.CharField(max_length=255)
+    file = models.FileField(upload_to='instructions/') # Fizyczny plik trafi do folderu media/instructions/
+    doc_type = models.CharField(max_length=50, choices=[('static', 'Do czytania'), ('interactive', 'Do wypełnienia')])
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title
