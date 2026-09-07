@@ -31,11 +31,14 @@ SECRET_KEY = 'django-insecure-**@ata5g4u0ie8!jnb9gwb-e90@g%b5xw^(^!9c)pxiq-gls04
 CRYPTOGRAPHY_SALT = os.getenv('CRYPTOGRAPHY_SALT', 'awaryjny-klucz-szyfrujacy-123')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '192.168.1.88']
+# Czytamy z env, domyślnie localhost dla dewelopmentu
+allowed_hosts_env = os.environ.get('ALLOWED_HOSTS', '127.0.0.1,localhost')
+ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
 
-GUACD_HOST = "127.0.0.1"
+# Zależności infrastrukturalne (domyślnie localhost, w Dockerze - nazwy kontenerów)
+GUACD_HOST = os.environ.get("GUACD_HOST", "127.0.0.1")
 GUACD_PORT = 4822
 
 
@@ -149,7 +152,7 @@ ASGI_APPLICATION = 'core.asgi.application'
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'LOCATION': f"redis://{os.environ.get('REDIS_HOST', '127.0.0.1')}:6379/1",
     }
 }
 
