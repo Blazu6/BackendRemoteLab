@@ -1,12 +1,13 @@
 from django.shortcuts import render
-
-# Create your views here.
-
 import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.core.cache import cache
-from .models import Machine
+from .models import Machine, PDU, PDUOutletMapping, Document
+from .services.pdu_factory import get_pdu_driver
+import os
+
+# USUNIĘTO KLASĘ DummyPDU - teraz używamy bazy danych!
 
 def index(request):
     return render(request, 'remote/index.html')
@@ -59,18 +60,143 @@ def machine_detail_api(request, machine_id):
 
 @csrf_exempt
 def pdu_api(request):
-    """
-    Zaślepka (placeholder) dla integracji z listami zasilającymi (PDU).
-    Tutaj inni programiści powinni zaimplementować sterowanie portami i pobieranie statusu.
-    """
+    # Obsługa żądań GET (Pobieranie listy listw LUB stanów gniazdek i nazw)
     if request.method == 'GET':
-        return JsonResponse({
-            'status': 'success',
-            'data': [
-                {'id': 1, 'name': 'PDU-1 Port 1', 'state': 'ON'},
-                {'id': 2, 'name': 'PDU-1 Port 2', 'state': 'OFF'}
-            ]
-        })
+        ip_param = request.GET.get('ip')
+        
+        # 1. Jeśli przekazano IP, odpytujemy sprzęt o stany portów oraz pobieramy nazwy własne
+        if ip_param:
+            try:
+                # ZMIANA: Pobieramy prawdziwą listwę z bazy danych
+                pdu_instance = PDU.objects.get(ip_address=ip_param)
+                driver = get_pdu_driver(pdu_instance)
+                
+                statuses = {}
+                port = 1
+                while port <= 32:  
+                    status = driver.get_status(port)
+                    if status is not None:
+                        statuses[port] = status
+                        port += 1
+                    else:
+                        break  
+                
+                # Pobieramy zapisane nazwy własne gniazdek z bazy danych dla tego IP
+                names_mapping = {
+                    m.outlet_id: m.custom_name 
+                    for m in PDUOutletMapping.objects.filter(pdu_ip=ip_param)
+                }
+                
+                return JsonResponse({
+                    'status': 'success', 
+                    'statuses': statuses,
+                    'names': names_mapping
+                })
+            except PDU.DoesNotExist:
+                 return JsonResponse({'status': 'error', 'message': 'Listwa nie istnieje w bazie'}, status=404)
+            except Exception as e:
+                return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+        
+        # 2. Jeśli brak IP, zwracamy listę zapamiętanych listew z bazy danych
+        else:
+            pdus = PDU.objects.all().order_by('-created_at')
+            data = [{'ip': p.ip_address, 'protocol': p.protocol} for p in pdus]
+            return JsonResponse({'status': 'success', 'data': data})
+
+    # Obsługa żądań POST (Włączanie/Wyłączanie, Zmiana nazwy LUB zapisywanie nowej listwy)
+    elif request.method == 'POST':
+        try:
+            body = json.loads(request.body)
+            
+            # Wariant A1: Zmiana nazwy gniazdka (np. na "Toster")
+            if body.get('action') == 'rename':
+                ip = body.get('ip_address')
+                outlet = body.get('outlet')
+                name = body.get('name', '')
+
+                if not all([ip, outlet is not None]):
+                    return JsonResponse({'status': 'error', 'message': 'Brakuje danych do zmiany nazwy'}, status=400)
+
+                PDUOutletMapping.objects.update_or_create(
+                    pdu_ip=ip,
+                    outlet_id=outlet,
+                    defaults={'custom_name': name}
+                )
+                return JsonResponse({'status': 'success', 'message': 'Zmieniono nazwę gniazdka'})
+
+            # Wariant A2: Kliknięcie przycisku ON/OFF na gniazdku
+            elif 'action' in body:
+                ip = body.get('ip_address')
+                outlet = body.get('outlet')
+                action = body.get('action')
+
+                if not all([ip, outlet, action]):
+                    return JsonResponse({'status': 'error', 'message': 'Brakuje danych w JSON'}, status=400)
+
+                try:
+                    # ZMIANA: Pobieramy prawdziwą listwę z bazy danych
+                    pdu_instance = PDU.objects.get(ip_address=ip)
+                    driver = get_pdu_driver(pdu_instance)
+
+                    if action == 'ON':
+                        success = driver.turn_on(outlet)
+                    elif action == 'OFF':
+                        success = driver.turn_off(outlet)
+                    else:
+                        return JsonResponse({'status': 'error', 'message': f'Nieznana akcja: {action}'}, status=400)
+
+                    if success:
+                        return JsonResponse({'status': 'success', 'message': f'Wykonano {action} na gniazdku {outlet}'})
+                    else:
+                        return JsonResponse({'status': 'error', 'message': 'Sprzęt nie odpowiedział'}, status=500)
+                except PDU.DoesNotExist:
+                     return JsonResponse({'status': 'error', 'message': 'Listwa nie istnieje w bazie'}, status=404)
+
+            # Wariant B: Zapisanie nowej listwy do bazy danych
+            else:
+                ip = body.get('ip_address')
+                protocol = body.get('protocol', 'REST_JSON')
+                
+                # ZMIANA: Odbieramy hasło (credentials) wysłane z Vue.js
+                credentials = body.get('credentials', '') 
+                
+                if not ip:
+                    return JsonResponse({'status': 'error', 'message': 'Brak adresu IP'}, status=400)
+
+                # ZMIANA: Używamy update_or_create żeby zaktualizować hasło (encrypt zrobi swoje!)
+                PDU.objects.update_or_create(
+                    ip_address=ip, 
+                    defaults={
+                        'protocol': protocol,
+                        'credentials': credentials
+                    }
+                )
+                return JsonResponse({'status': 'success', 'message': 'Zapisano listwę'})
+
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Błąd serwera: {str(e)}'}, status=500)
+
+    # Obsługa żądań DELETE (Usuwanie listwy z bazy)
+    elif request.method == 'DELETE':
+        try:
+            body = json.loads(request.body)
+            ip = body.get('ip_address')
+            
+            if not ip:
+                return JsonResponse({'status': 'error', 'message': 'Brak adresu IP do usunięcia'}, status=400)
+                
+            deleted_count, _ = PDU.objects.filter(ip_address=ip).delete()
+            # Przy okazji można też wyczyścić przypisane nazwy dla tego IP
+            PDUOutletMapping.objects.filter(pdu_ip=ip).delete()
+            
+            if deleted_count > 0:
+                return JsonResponse({'status': 'success', 'message': 'Usunięto listwę'})
+            else:
+                return JsonResponse({'status': 'error', 'message': 'Nie znaleziono listwy'}, status=404)
+                
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
     return JsonResponse({'status': 'error', 'message': 'Metoda nieobsługiwana'}, status=405)
 
 @csrf_exempt
@@ -87,4 +213,73 @@ def cameras_api(request):
                 {'id': 'cam2', 'name': 'Laboratorium 1 - Tył', 'stream_url': 'rtsp://...'}
             ]
         })
+    return JsonResponse({'status': 'error', 'message': 'Metoda nieobsługiwana'}, status=405)
+
+    # ==========================================
+# NOWE WIDOKI DLA INSTRUKCJI PDF
+# ==========================================
+
+@csrf_exempt
+def documents_api(request):
+    if request.method == 'GET':
+        # Pobieranie listy wszystkich dokumentów
+        docs = Document.objects.all().order_by('-uploaded_at')
+        data = [{
+            'id': d.id,
+            'title': d.title,
+            'type': d.doc_type,
+            'url': d.file.url  # Generuje link typu /media/instructions/plik.pdf
+        } for d in docs]
+        return JsonResponse(data, safe=False)
+
+    elif request.method == 'POST':
+        # Wgrywanie nowego dokumentu. 
+        # Zauważ, że pobieramy dane z request.POST i request.FILES
+        title = request.POST.get('title')
+        doc_type = request.POST.get('type')
+        file_obj = request.FILES.get('file')
+
+        if not title or not file_obj:
+            return JsonResponse({'status': 'error', 'message': 'Brak tytułu lub pliku'}, status=400)
+
+        try:
+            doc = Document.objects.create(
+                title=title,
+                doc_type=doc_type,
+                file=file_obj
+            )
+            return JsonResponse({
+                'status': 'success',
+                'id': doc.id,
+                'title': doc.title,
+                'type': doc.doc_type,
+                'url': doc.file.url
+            })
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+    return JsonResponse({'status': 'error', 'message': 'Metoda nieobsługiwana'}, status=405)
+
+@csrf_exempt
+def document_detail_api(request, document_id):
+    if request.method == 'DELETE':
+        try:
+            doc = Document.objects.get(id=document_id)
+            
+            # --- NOWY KOD: Fizyczne usuwanie pliku z dysku ---
+            if doc.file:
+                file_path = doc.file.path
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            # -------------------------------------------------
+            
+            # Usuwa wpis z bazy documents.sqlite3
+            doc.delete() 
+            return JsonResponse({'status': 'success'})
+            
+        except Document.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Nie znaleziono pliku'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
     return JsonResponse({'status': 'error', 'message': 'Metoda nieobsługiwana'}, status=405)

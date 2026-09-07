@@ -64,7 +64,7 @@ class GuacamoleConsumer(AsyncWebsocketConsumer):
             extras['ignore_host_key'] = 'true'
         elif protocol == 'rdp':
             extras['ignore_cert'] = 'true'
-            extras['security'] = 'rdp'
+            extras['security'] = 'any'
             
         if shadow == 'readonly':
             extras['read_only'] = 'true'

@@ -17,6 +17,11 @@ Including another URLconf
 from remote.views import index, machines_api, machine_detail_api, pdu_api, cameras_api
 from django.contrib import admin
 from django.urls import path
+from remote import views
+
+# --- NOWE IMPORTY DO OBSŁUGI PLIKÓW ---
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -25,4 +30,10 @@ urlpatterns = [
     path('api/pdu/', pdu_api, name='pdu_api'),
     path('api/cameras/', cameras_api, name='cameras_api'),
     path('', index, name='index'),
+    path('api/documents/', views.documents_api, name='documents_api'),
+    path('api/documents/<int:document_id>/', views.document_detail_api, name='document_detail_api'),
 ]
+
+# --- OBSŁUGA SERWOWANIA PLIKÓW Z FOLDERU MEDIA ---
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

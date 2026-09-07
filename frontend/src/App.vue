@@ -21,6 +21,12 @@
         >
           📷 Kamery
         </button>
+        <button 
+          :class="{ active: currentView === 'instructions' }" 
+          @click="currentView = 'instructions'"
+        >
+          📄 Instrukcje
+        </button>
       </nav>
     </aside>
 
@@ -60,6 +66,10 @@
         <div v-if="currentView === 'cameras'" class="module-container">
           <CameraView />
         </div>
+        <!-- NOWY WIDOK: Instrukcje -->
+        <div v-if="currentView === 'instructions'" class="module-container">
+          <InstructionsView />
+        </div>
       </div>
 
       <!-- Pasek zadań na zminimalizowane sesje (Dock) -->
@@ -78,6 +88,7 @@ import RemoteSession from './components/RemoteSession.vue';
 import PDUControl from './components/PDUControl.vue';
 import CameraView from './components/CameraView.vue';
 import type { ConnectionConfig } from './composables/useGuacamole';
+import InstructionsView from './components/InstructionsView.vue';
 
 interface SessionData {
   id: string;
