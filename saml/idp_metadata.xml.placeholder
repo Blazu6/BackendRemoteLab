@@ -1,0 +1,8 @@
+# Plik placeholder — IdP uczelni wyśle Ci plik XML z metadanymi.
+# Zapisz go tutaj jako idp_metadata.xml i odkomentuj w settings.py:
+#
+#   'metadata': {
+#       'local': [str(BASE_DIR / 'saml' / 'idp_metadata.xml')],
+#   },
+#
+# Nie wklejaj metadanych IdP bezpośrednio do kodu.

@@ -30,3 +30,7 @@ Thumbs.db
 # Agents
 .agents/
 
+# SAML — certyfikaty i metadane (nigdy do repo!)
+saml/certs/sp.key
+saml/certs/sp.crt
+saml/idp_metadata.xml

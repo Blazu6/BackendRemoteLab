@@ -10,7 +10,12 @@ ENV PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    xmlsec1 \
+    libxmlsec1-dev \
+    libxmlsec1-openssl \
+    pkg-config \
+    libldap2-dev \
+    libsasl2-dev
 
 # Install python dependencies
 COPY requirements.txt .

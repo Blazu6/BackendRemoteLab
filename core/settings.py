@@ -55,7 +55,9 @@ INSTALLED_APPS = [
     'channels',
     'remote',
     'corsheaders',
-
+    # --- SAML2 + REST ---
+    'djangosaml2',
+    'rest_framework',
 ]
 
 MIDDLEWARE = [
@@ -64,6 +66,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'djangosaml2.middleware.SamlSessionMiddleware',  # musi być po AuthenticationMiddleware
     'django.contrib.messages.middleware.MessageMiddleware',
     #'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -166,5 +169,179 @@ DATABASE_ROUTERS = ['remote.db_router.DocumentRouter']
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost",
+    "http://127.0.0.1",
     "http://192.168.1.88:5173", #Dać tu IP servera końcowego by nie wywalał błędów CORS policy jak na starej wersji
+    "http://192.168.33.10",     # LAN IP hosta (prod - port 80)
 ]
+
+# ===========================================================================
+# AUTENTYKACJA — backendy (kolejność ma znaczenie!)
+# ===========================================================================
+AUTHENTICATION_BACKENDS = [
+    'remote.auth_backend.EduGainLdapBackend',    # 1. SAML2 + synchronizacja LDAP
+    'django_auth_ldap.backend.LDAPBackend',       # 2. Bezpośredni login LDAP (opcjonalny)
+    'django.contrib.auth.backends.ModelBackend',  # 3. Lokalny admin Django (fallback)
+]
+
+# ===========================================================================
+# LDAP — konfiguracja
+# TODO: Uzupełnić po otrzymaniu danych z działu IT uczelni
+# ===========================================================================
+import ldap
+from django_auth_ldap.config import LDAPSearch, GroupOfNamesType
+
+AUTH_LDAP_SERVER_URI     = os.getenv('LDAP_URI',           'ldap://ldap:389')
+AUTH_LDAP_BIND_DN        = os.getenv('LDAP_BIND_DN',       'cn=admin,dc=lab,dc=uczelnia,dc=pl')
+AUTH_LDAP_BIND_PASSWORD  = os.getenv('LDAP_BIND_PASSWORD', 'ZMIEN_MNIE')
+
+# Gdzie szukać użytkowników (uid = login z SAML eduPersonPrincipalName bez @domain)
+AUTH_LDAP_USER_SEARCH = LDAPSearch(
+    os.getenv('LDAP_USER_BASE', 'ou=users,dc=lab,dc=uczelnia,dc=pl'),
+    ldap.SCOPE_SUBTREE,
+    '(uid=%(user)s)',
+)
+
+# Gdzie szukać grup
+AUTH_LDAP_GROUP_SEARCH = LDAPSearch(
+    os.getenv('LDAP_GROUP_BASE', 'ou=groups,dc=lab,dc=uczelnia,dc=pl'),
+    ldap.SCOPE_SUBTREE,
+    '(objectClass=groupOfNames)',
+)
+AUTH_LDAP_GROUP_TYPE = GroupOfNamesType()
+
+# Mapowanie grupy LDAP → flagi Django (is_staff, is_superuser)
+_LDAP_BASE = os.getenv('LDAP_GROUP_BASE', 'ou=groups,dc=lab,dc=uczelnia,dc=pl')
+AUTH_LDAP_USER_FLAGS_BY_GROUP = {
+    'is_active':    f'cn=lab_students,{_LDAP_BASE}',
+    'is_staff':     f'cn=lab_admins,{_LDAP_BASE}',
+    'is_superuser': f'cn=lab_admins,{_LDAP_BASE}',
+}
+
+# Automatycznie synchronizuje grupy LDAP → Django groups przy każdym logowaniu
+AUTH_LDAP_MIRROR_GROUPS = True
+
+# Mapowanie atrybutów LDAP → pola modelu User
+AUTH_LDAP_USER_ATTR_MAP = {
+    'first_name': 'givenName',
+    'last_name':  'sn',
+    'email':      'mail',
+}
+
+# Czy synchronizować grupy przy każdym logowaniu (nie tylko przy pierwszym)?
+AUTH_LDAP_ALWAYS_UPDATE_USER = True
+
+# ===========================================================================
+# SAML2 — konfiguracja djangosaml2 / PySAML2
+# TODO: Uzupełnić po rejestracji SP w federacji uczelni / EduGAIN
+# ===========================================================================
+import saml2
+import saml2.saml
+
+# Bazowy URL aplikacji — zmień na produkcyjny adres serwera
+_SP_BASE_URL = os.getenv('SP_BASE_URL', 'http://localhost:8000')
+
+SAML_CONFIG = {
+    # Unikalny identyfikator Twojego SP (zwykle URL metadanych)
+    'entityid': f'{_SP_BASE_URL}/saml/metadata/',
+
+    # Katalog z certyfikatami SP
+    'key_file':  str(BASE_DIR / 'saml' / 'certs' / 'sp.key'),
+    'cert_file': str(BASE_DIR / 'saml' / 'certs' / 'sp.crt'),
+
+    'service': {
+        'sp': {
+            'name': 'RemoteLab SP',
+
+            # Endpointy SP (URL-e które djangosaml2 rejestruje automatycznie)
+            'endpoints': {
+                'assertion_consumer_service': [
+                    (f'{_SP_BASE_URL}/saml/acs/', saml2.BINDING_HTTP_POST),
+                ],
+                'single_logout_service': [
+                    (f'{_SP_BASE_URL}/saml/ls/',   saml2.BINDING_HTTP_REDIRECT),
+                    (f'{_SP_BASE_URL}/saml/ls/post', saml2.BINDING_HTTP_POST),
+                ],
+            },
+
+            # Wymagaj podpisanych asercji (obowiązkowe dla EduGAIN)
+            'authn_requests_signed':    True,
+            'want_assertions_signed':   True,
+            'want_response_signed':     False,  # IdP może nie podpisywać całej odpowiedzi
+            'allow_unsolicited':        False,
+
+            # Atrybuty które chcemy otrzymywać od IdP
+            # (muszą być uzgodnione z działem IT uczelni)
+            'required_attributes': [
+                'eduPersonPrincipalName',
+            ],
+            'optional_attributes': [
+                'mail',
+                'givenName',
+                'sn',
+                'eduPersonAffiliation',
+            ],
+        },
+    },
+
+    # Metadane IdP — uzupełnij po otrzymaniu XML od uczelni
+    # Opcja A: lokalny plik XML (zalecane dla stabilności)
+    # Opcja B: zdalny URL (wygodniejsze, ale wymaga dostępu do sieci przy starcie)
+    'metadata': {
+        # TODO: Wstaw plik metadanych IdP uczelni lub URL federacji
+        # 'local': [str(BASE_DIR / 'saml' / 'idp_metadata.xml')],
+        # 'remote': [{'url': 'https://federacja.uczelnia.pl/metadata.xml'}],
+    },
+
+    # Algorytmy podpisów (SHA-256 wymagane przez EduGAIN)
+    'signing_algorithm':   saml2.xmldsig.SIG_RSA_SHA256,
+    'digest_algorithm':    saml2.xmldsig.DIGEST_SHA256,
+
+    # Gdzie xmlsec1 jest zainstalowane (sprawdź: which xmlsec1)
+    'xmlsec_binary': '/usr/bin/xmlsec1',
+}
+
+# Mapowanie atrybutów SAML → pola modelu User Django
+SAML_ATTRIBUTE_MAPPING = {
+    'eduPersonPrincipalName': ('username',),  # eppn → username (np. jan.kowalski@uczelnia.pl)
+    'mail':                   ('email',),
+    'givenName':              ('first_name',),
+    'sn':                     ('last_name',),
+}
+
+# Użyj atrybutu zamiast NameID jako username (bardziej przenośne)
+SAML_USE_NAME_ID_AS_USERNAME = False
+
+# Czy automatycznie tworzyć użytkownika przy pierwszym logowaniu?
+SAML_CREATE_UNKNOWN_USER = True
+
+# Czy synchronizować grupy LDAP po każdym logowaniu SAML?
+SAML_LDAP_SYNC_GROUPS = True
+
+# Gdzie przekierować po zalogowaniu / wylogowaniu
+LOGIN_URL          = '/saml/login/'
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/'
+
+# ===========================================================================
+# DJANGO REST FRAMEWORK
+# ===========================================================================
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        # Domyślnie wszystkie endpointy wymagają zalogowania.
+        # Widoki publiczne nadpisują to przez @permission_classes([AllowAny])
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}
+
+# JWT — tokeny dla frontendu Vue
+from datetime import timedelta
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME':  timedelta(hours=8),    # czas trwania sesji laboratoryjnej
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS':  True,
+}

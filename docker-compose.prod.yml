@@ -9,7 +9,7 @@ services:
       - REDIS_HOST=redis
       - GUACD_HOST=guacd
       - DEBUG=False
-      # - ALLOWED_HOSTS=twoja_domena.com,localhost
+      - ALLOWED_HOSTS=twoja_domena.com,localhost,${LAN_IP}
     depends_on:
       - redis
       - guacd
