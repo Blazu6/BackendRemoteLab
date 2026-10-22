@@ -1,0 +1,8 @@
+venv/
+plan.md
+sesja*.md
+.coverage
+*.pyc
+htmlcov/
+__pycache__/
+.env
