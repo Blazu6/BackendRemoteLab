@@ -1,0 +1,21 @@
+# Środowisko i narzędzia
+venv/
+.venv/
+.git/
+__pycache__/
+*.pyc
+
+# Sekrety i baza danych
+.env
+db.sqlite3
+saml/certs/*.key
+saml/certs/*.crt
+
+# Testy i raporty
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Notatki i plan
+plan.md
+sesja*.md

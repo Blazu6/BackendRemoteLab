@@ -1,8 +1,12 @@
 venv/
 plan.md
-sesja*.md
+docs/*.md
 .coverage
 *.pyc
 htmlcov/
 __pycache__/
 .env
+.pytest_cache/
+saml/certs/*.key
+saml/certs/*.crt
+db.sqlite3
