@@ -1,6 +1,6 @@
 venv/
 plan.md
-docs/*.md
+docs/
 .coverage
 *.pyc
 htmlcov/
